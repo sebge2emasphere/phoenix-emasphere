@@ -1,18 +1,26 @@
 package com.emasphere.phoenix;
 
+import org.apache.hadoop.hbase.filter.CompareFilter;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
+import org.apache.phoenix.compile.KeyPart;
 import org.apache.phoenix.expression.Expression;
 import org.apache.phoenix.expression.LiteralExpression;
 import org.apache.phoenix.expression.function.PrefixFunction;
 import org.apache.phoenix.parse.FunctionParseNode;
+import org.apache.phoenix.query.KeyRange;
+import org.apache.phoenix.schema.PColumn;
+import org.apache.phoenix.schema.PTable;
+import org.apache.phoenix.schema.SortOrder;
 import org.apache.phoenix.schema.tuple.Tuple;
 import org.apache.phoenix.schema.types.PBoolean;
 import org.apache.phoenix.schema.types.PDataType;
 import org.apache.phoenix.schema.types.PVarbinary;
 import org.apache.phoenix.schema.types.PVarchar;
+import org.apache.phoenix.util.ByteUtil;
 
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -85,6 +93,53 @@ public class HasBase64PrefixFunction extends PrefixFunction {
     @Override
     public PDataType getDataType() {
         return PBoolean.INSTANCE;
+    }
+
+    @Override
+    public KeyPart newKeyPart(KeyPart childPart) {
+        return new KeyPart() {
+
+            private final List<Expression> extractNodes = extractNode()
+                    ? Collections.singletonList(HasBase64PrefixFunction.this)
+                    : Collections.emptyList();
+
+            @Override
+            public KeyRange getKeyRange(CompareFilter.CompareOp op, Expression rhs) {
+                if (op != CompareFilter.CompareOp.EQUAL) {
+                    throw new IllegalStateException("Only the equals operator is allowed, but was [" + op + "].");
+                }
+
+                final byte[] expression = evaluateExpression(rhs);
+
+                if (!Arrays.equals(expression, PDataType.TRUE_BYTES)) {
+                    throw new IllegalStateException("Only the true value is allowed, but was [" + Arrays.toString(expression) + "].");
+                }
+
+                final byte[] prefix = DECODER.decode(evaluateExpression(getPrefixExpression()));
+
+                return KeyRange.getKeyRange(prefix, true, ByteUtil.nextKey(prefix), false);
+            }
+
+            @Override
+            public List<Expression> getExtractNodes() {
+                return extractNodes;
+            }
+
+            @Override
+            public PColumn getColumn() {
+                return childPart.getColumn();
+            }
+
+            @Override
+            public PTable getTable() {
+                return childPart.getTable();
+            }
+        };
+    }
+
+    @Override
+    public SortOrder getSortOrder() {
+        return getVarBinaryExpression().getSortOrder();
     }
 
     @Override

@@ -1,8 +1,10 @@
 package com.emasphere.phoenix;
 
+import org.apache.hadoop.hbase.filter.CompareFilter;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.phoenix.expression.Expression;
 import org.apache.phoenix.expression.LiteralExpression;
+import org.apache.phoenix.query.KeyRange;
 import org.apache.phoenix.schema.tuple.SingleKeyValueTuple;
 import org.apache.phoenix.schema.types.PDataType;
 import org.junit.Test;
@@ -76,6 +78,27 @@ public class HasBase64PrefixFunctionTest {
 
         assertEquals("evaluate", true, evaluate);
         assertArrayEquals("result", PDataType.FALSE_BYTES, ptr.get());
+    }
+
+    @Test
+    public void keyRange() throws IOException {
+        final byte[] actualValue = toBytes("emasphere");
+        final String prefixString = "ema-";
+        final byte[] prefixValue = ENCODER.encode(prefixString.getBytes());
+
+        final Expression binary = LiteralExpression.newConstant(actualValue);
+        final LiteralExpression prefix = LiteralExpression.newConstant(prefixValue);
+
+        final ImmutableBytesWritable ptr = new ImmutableBytesWritable();
+
+        final HasBase64PrefixFunction function = createFunction(binary, prefix);
+
+        final KeyRange keyRange = function.newKeyPart(null).getKeyRange(CompareFilter.CompareOp.EQUAL, LiteralExpression.newConstant(true));
+
+        assertArrayEquals("lower range", prefixString.getBytes(), keyRange.getLowerRange());
+        assertEquals("lower inclusive", true, keyRange.isLowerInclusive());
+        assertArrayEquals("upper range", "ema.".getBytes(), keyRange.getUpperRange());
+        assertEquals("upper inclusive", false, keyRange.isUpperInclusive());
     }
 
     private HasBase64PrefixFunction createFunction(Expression binary, LiteralExpression prefix) {
